@@ -120,7 +120,63 @@ RSpec.describe Status, type: :model do
   end
 
   describe '#permitted?' do
-    pending
+    it 'returns true when direct and account is viewer' do
+      subject.visibility = :direct
+      expect(subject.permitted?(subject.account)).to be true
+    end
+
+    it 'returns true when direct and viewer is mentioned' do
+      subject.visibility = :direct
+      subject.mentions = [Fabricate(:mention, account: alice)]
+
+      expect(subject.permitted?(alice)).to be true
+    end
+
+    it 'returns false when direct and viewer is not mentioned' do
+      viewer = Fabricate(:account)
+      subject.visibility = :direct
+
+      expect(subject.permitted?(viewer)).to be false
+    end
+
+    it 'returns true when private and account is viewer' do
+      subject.visibility = :direct
+      expect(subject.permitted?(subject.account)).to be true
+    end
+
+    it 'returns true when private and account is following viewer' do
+      follow = Fabricate(:follow)
+      subject.visibility = :private
+      subject.account = follow.target_account
+
+      expect(subject.permitted?(follow.account)).to be true
+    end
+
+    it 'returns true when private and viewer is mentioned' do
+      subject.visibility = :private
+      subject.mentions = [Fabricate(:mention, account: alice)]
+
+      expect(subject.permitted?(alice)).to be true
+    end
+
+    it 'returns false when private and viewer is not mentioned or followed' do
+      viewer = Fabricate(:account)
+      subject.visibility = :private
+
+      expect(subject.permitted?(viewer)).to be false
+    end
+
+    it 'returns true when no viewer' do
+      expect(subject.permitted?).to be true
+    end
+
+    it 'returns false when viewer is blocked' do
+      block = Fabricate(:block)
+      subject.visibility = :private
+      subject.account = block.target_account
+
+      expect(subject.permitted?(block.account)).to be false
+    end
   end
 
   describe '#filter_from_context?' do
@@ -226,7 +282,7 @@ RSpec.describe Status, type: :model do
 
       it 'excludes statuses from accounts blocked by the account' do
         blocked = Fabricate(:account)
-        Fabricate(:block, account: @account, target_account: blocked, block: true)
+        Fabricate(:block, account: @account, target_account: blocked)
         blocked_status = Fabricate(:status, account: blocked)
 
         results = Status.as_public_timeline(@account)
@@ -235,7 +291,7 @@ RSpec.describe Status, type: :model do
 
       it 'excludes statuses from accounts who have blocked the account' do
         blocked = Fabricate(:account)
-        Fabricate(:block, account: blocked, target_account: @account, block: true)
+        Fabricate(:block, account: blocked, target_account: @account)
         blocked_status = Fabricate(:status, account: blocked)
 
         results = Status.as_public_timeline(@account)
@@ -244,11 +300,48 @@ RSpec.describe Status, type: :model do
 
       it 'excludes statuses from accounts muted by the account' do
         muted = Fabricate(:account)
-        Fabricate(:mute, account: @account, target_account: muted, block: false)
+        Fabricate(:mute, account: @account, target_account: muted)
         muted_status = Fabricate(:status, account: muted)
 
         results = Status.as_public_timeline(@account)
         expect(results).not_to include(muted_status)
+      end
+
+      context 'with language preferences' do
+        it 'excludes statuses in languages not allowed by the account user' do
+          user = Fabricate(:user, allowed_languages: [:en, :es])
+          @account.update(user: user)
+          en_status = Fabricate(:status, language: 'en')
+          es_status = Fabricate(:status, language: 'es')
+          fr_status = Fabricate(:status, language: 'fr')
+
+          results = Status.as_public_timeline(@account)
+          expect(results).to include(en_status)
+          expect(results).to include(es_status)
+          expect(results).not_to include(fr_status)
+        end
+
+        it 'includes all languages when user does not have a setting' do
+          user = Fabricate(:user, allowed_languages: [])
+          @account.update(user: user)
+
+          en_status = Fabricate(:status, language: 'en')
+          es_status = Fabricate(:status, language: 'es')
+
+          results = Status.as_public_timeline(@account)
+          expect(results).to include(en_status)
+          expect(results).to include(es_status)
+        end
+
+        it 'includes all languages when account does not have a user' do
+          expect(@account.user).to be_nil
+          en_status = Fabricate(:status, language: 'en')
+          es_status = Fabricate(:status, language: 'es')
+
+          results = Status.as_public_timeline(@account)
+          expect(results).to include(en_status)
+          expect(results).to include(es_status)
+        end
       end
 
       context 'where that account is silenced' do
