@@ -1,4 +1,5 @@
 protobuf-compiler
+protobuf-lite-devel
 libprotobuf-dev
 ffmpeg
 libxdamage1
